@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>mAb 인과그래프 검증 — Causal Interpretation Review</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+:root{
+  --ink:#20303a; --soft:#51626d; --paper:#fbf7ef; --card:#fffdf8; --line:#e8e0d2;
+  --brand:#2f7d8c; --brand-d:#1f5b67; --accent:#e9913f;
+  --pos:#2e9e6b; --neg:#d65a4e; --neu:#9aa7b0;
+  --seq:#7c6cd1; --str:#4f8fcf; --form:#2f9e8f; --stress:#e07b39; --stab:#d65a8a; --qual:#b58a2e;
+  --sans:"Pretendard",-apple-system,"Segoe UI","Apple SD Gothic Neo",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);color:var(--ink);line-height:1.7;
+  background:radial-gradient(1000px 500px at 85% -10%,#fff6e6 0,transparent 60%),var(--paper);}
+.wrap{max-width:760px;margin:0 auto;padding:24px 20px 80px}
+header h1{font-size:24px;margin:0 0 4px;letter-spacing:-.01em}
+header p{margin:0;color:var(--soft);font-size:14px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:18px 0;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.bar input,.bar select{font-family:var(--sans);font-size:14px;padding:7px 10px;
+  border:1px solid var(--line);border-radius:8px;background:#fff}
+.bar input#name{flex:1;min-width:140px}
+.prog{margin-left:auto;color:var(--soft);font-size:13px;white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 10px 30px rgba(40,50,60,.07);padding:22px 24px;margin:16px 0}
+.edge{font-size:19px;font-weight:700;margin:2px 0 6px;letter-spacing:-.01em}
+.edge .rel{color:var(--brand-d)}
+.arrow{color:var(--neu);margin:0 6px}
+.chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff;margin:1px}
+.chip.physical,.chip.stab{background:var(--stab)} .chip.chemical{background:var(--form)}
+.chip.biological{background:var(--str)}
+.chip.pos{background:var(--pos)}.chip.neg{background:var(--neg)}.chip.neu{background:var(--neu)}
+.evidence{font-size:13px;color:var(--soft);border-left:3px solid var(--line);padding:4px 0 4px 12px;margin:10px 0}
+.interp{background:#eef4f5;border:1px solid #d3e6e9;border-radius:10px;padding:14px 16px;margin:14px 0}
+.interp .lab{font-size:11px;letter-spacing:.1em;color:var(--brand-d);font-weight:700;text-transform:uppercase}
+.verdict{display:flex;gap:10px;margin:14px 0 10px}
+.verdict button{flex:1;font-family:var(--sans);font-size:15px;font-weight:700;cursor:pointer;
+  padding:12px;border-radius:10px;border:2px solid var(--line);background:#fff;color:var(--soft)}
+.verdict button.good.sel{border-color:var(--pos);background:#eaf6f1;color:var(--pos)}
+.verdict button.bad.sel{border-color:var(--neg);background:#fdeeec;color:var(--neg)}
+textarea{width:100%;font-family:var(--sans);font-size:14px;padding:10px 12px;
+  border:1px solid var(--line);border-radius:10px;resize:vertical;min-height:64px;background:#fff}
+.actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.btn{font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;border:none;border-radius:10px;padding:10px 16px}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.btn.nav{background:#fff;border:1px solid var(--line);color:var(--ink);min-width:90px}
+.btn:disabled{opacity:.4;cursor:default}
+.nav-row{display:flex;justify-content:space-between;margin-top:8px}
+.summary{background:#fff3e2;border:1px solid #f3d9b3;border-radius:12px;padding:14px 16px;margin:16px 0;font-size:14px}
+.summary b{color:var(--accent)}
+.saved-tag{font-size:12px;color:var(--pos);font-weight:700;margin-left:8px}
+.foot{text-align:center;color:var(--soft);font-size:12px;margin-top:30px}
+a{color:var(--brand-d)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧪 mAb 인과그래프 검증</h1>
+    <p>GPT가 만든 인과관계 해석이 타당한지 사람이 검수합니다 · 정적 웹앱(서버·DB 불필요)</p>
+  </header>
+
+  <div class="bar">
+    <input id="name" placeholder="리뷰어 이름" />
+    <select id="filter">
+      <option value="all">전체</option>
+      <option value="physical">physical</option>
+      <option value="chemical">chemical</option>
+      <option value="biological">biological</option>
+    </select>
+    <label class="btn ghost" style="cursor:pointer">JSON 불러오기
+      <input id="upload" type="file" accept=".json" hidden />
+    </label>
+    <span class="prog" id="prog">0 / 0</span>
+  </div>
+
+  <div class="card" id="card">
+    <!-- 채워짐 -->
+  </div>
+
+  <div class="nav-row">
+    <button class="btn nav" id="prev">← 이전</button>
+    <button class="btn nav" id="next">다음 →</button>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="actions">
+    <button class="btn primary" id="export">📥 리뷰 결과 내보내기 (JSON)</button>
+    <button class="btn ghost" id="reset">전체 초기화</button>
+  </div>
+
+  <p class="foot">mab-causal-review · 정적 검증 앱 · <a href="https://sdkparkforbi.github.io/mab-causal-guidebook/">그림책</a></p>
+</div>
+
+<script>
+/* ====================================================================
+   mAb 인과그래프 검증 — 정적 클라이언트 앱
+   - 샘플(JSON)을 보고 GPT 해석의 적절/부적절을 판정
+   - 결과는 브라우저 localStorage에 저장, JSON으로 내보내기
+   ==================================================================== */
+
+// 기본 샘플 (samples.json 업로드로 교체 가능)
+const DEFAULT_SAMPLES = [
+  {id:1, cause:"thermal stress", relationship:"promotes", effect:"aggregation", subcat:"physical",
+   polarity:"neg", evidence:"Under elevated temperature, exposed hydrophobic patches drive intermolecular association.",
+   gpt:"열 스트레스가 소수성 패치를 노출시켜 분자 간 결합을 촉진하므로 응집을 증가시킨다. 물리적 불안정화의 대표 경로."},
+  {id:2, cause:"aggregation", relationship:"induces", effect:"immunogenicity", subcat:"biological",
+   polarity:"neg", evidence:"Aggregated species can trigger unwanted immune responses in patients.",
+   gpt:"응집체가 면역계에 의해 비자기로 인식되어 면역원성을 유발한다. SC 전환 시 특히 경계할 사슬."},
+  {id:3, cause:"polysorbate 80", relationship:"inhibits", effect:"aggregation", subcat:"physical",
+   polarity:"pos", evidence:"Surfactant shields the air-water interface, reducing interfacial aggregation.",
+   gpt:"PS80가 계면을 덮어 계면 유발 응집을 억제한다. 부형제를 통한 처방적 개입 지점."},
+  {id:4, cause:"low pH", relationship:"promotes", effect:"fragmentation", subcat:"chemical",
+   polarity:"neg", evidence:"Acidic conditions accelerate hinge-region peptide bond hydrolysis.",
+   gpt:"낮은 pH에서 힌지 영역 펩타이드 결합 가수분해가 빨라져 단편화가 촉진된다."},
+  {id:5, cause:"methionine", relationship:"oxidizes", effect:"oxidation", subcat:"chemical",
+   polarity:"neg", evidence:"Exposed Met residues are susceptible to oxidation under oxidative stress.",
+   gpt:"노출된 메티오닌 잔기가 산화 스트레스에서 산화되어 화학적 열화를 일으킨다."},
+  {id:6, cause:"self-association", relationship:"increases", effect:"viscosity", subcat:"physical",
+   polarity:"neg", evidence:"Reversible self-association at high concentration elevates solution viscosity.",
+   gpt:"고농도에서 가역적 자가결합이 점도를 상승시킨다. SC 고농도 제형의 핵심 난제."},
+  {id:7, cause:"sucrose", relationship:"stabilizes", effect:"conformational stability", subcat:"biological",
+   polarity:"pos", evidence:"Sugar acts as a preferential excipient stabilizing the native fold.",
+   gpt:"수크로스가 우선적 배제를 통해 천연 접힘 구조를 안정화한다."},
+  {id:8, cause:"fcrn binding", relationship:"stabilizes", effect:"half-life", subcat:"biological",
+   polarity:"pos", evidence:"FcRn-mediated recycling prolongs serum half-life.",
+   gpt:"FcRn 결합이 재순환을 매개해 혈청 반감기를 늘린다. 약동학과 직결."},
+  {id:9, cause:"freeze-thaw", relationship:"promotes", effect:"particle formation", subcat:"physical",
+   polarity:"neg", evidence:"Ice-interface stress during freeze-thaw nucleates subvisible particles.",
+   gpt:"동결-융해 시 얼음 계면 스트레스가 미세입자 형성을 촉진한다."},
+  {id:10, cause:"asparagine deamidation", relationship:"decreases", effect:"binding activity", subcat:"chemical",
+   polarity:"neg", evidence:"Deamidation in CDR alters charge and reduces antigen binding.",
+   gpt:"CDR 내 아스파라긴 탈아미드화가 전하를 바꿔 항원 결합 활성을 떨어뜨린다."}
+];
+
+const POL = {pos:"안정화", neg:"불안정화", neu:"중립"};
+const KEY_REV = "mab_review_results_v1";
+
+let SAMPLES = DEFAULT_SAMPLES.slice();
+let reviews = JSON.parse(localStorage.getItem(KEY_REV) || "{}");
+let idx = 0;
+let filter = "all";
+
+const $ = s => document.querySelector(s);
+
+function filtered(){ return SAMPLES.filter(s => filter==="all" || s.subcat===filter); }
+
+function render(){
+  const list = filtered();
+  if(idx >= list.length) idx = 0;
+  const s = list[idx];
+  $("#prog").textContent = list.length ? `${idx+1} / ${list.length}` : "0 / 0";
+
+  if(!s){ $("#card").innerHTML = "<p>표시할 샘플이 없습니다.</p>"; renderSummary(); return; }
+
+  const rev = reviews[s.id] || {};
+  $("#card").innerHTML = `
+    <div class="edge">
+      ${esc(s.cause)} <span class="arrow">→</span>
+      <span class="rel">[${esc(s.relationship)}]</span> <span class="arrow">→</span>
+      ${esc(s.effect)}
+    </div>
+    <div>
+      <span class="chip ${s.subcat}">${s.subcat}</span>
+      <span class="chip ${s.polarity}">${POL[s.polarity]||""}</span>
+      ${rev.verdict ? `<span class="saved-tag">✓ 저장됨: ${rev.verdict==="good"?"적절":"부적절"}</span>` : ""}
+    </div>
+    <div class="evidence">📄 근거: ${esc(s.evidence||"")}</div>
+    <div class="interp"><span class="lab">GPT 해석</span><div>${esc(s.gpt||"")}</div></div>
+
+    <div class="verdict">
+      <button class="good ${rev.verdict==="good"?"sel":""}" data-v="good">👍 적절</button>
+      <button class="bad ${rev.verdict==="bad"?"sel":""}" data-v="bad">👎 부적절</button>
+    </div>
+    <textarea id="fb" placeholder="의견 (선택)">${esc(rev.feedback||"")}</textarea>
+    <div class="actions">
+      <button class="btn primary" id="save">저장하고 다음 →</button>
+    </div>
+  `;
+
+  $("#card").querySelectorAll(".verdict button").forEach(b=>{
+    b.onclick = ()=>{ s._tmp = b.dataset.v;
+      $("#card").querySelectorAll(".verdict button").forEach(x=>x.classList.remove("sel"));
+      b.classList.add("sel"); };
+  });
+  $("#save").onclick = ()=> saveCurrent(s);
+  renderSummary();
+}
+
+function saveCurrent(s){
+  const name = $("#name").value.trim();
+  const sel = $("#card").querySelector(".verdict button.sel");
+  const verdict = (s._tmp) || (sel && sel.dataset.v) || (reviews[s.id] && reviews[s.id].verdict);
+  if(!name){ alert("리뷰어 이름을 입력하세요."); return; }
+  if(!verdict){ alert("적절/부적절을 선택하세요."); return; }
+  reviews[s.id] = { reviewer:name, verdict, feedback:$("#fb").value.trim(), at:new Date().toISOString() };
+  localStorage.setItem(KEY_REV, JSON.stringify(reviews));
+  next();
+}
+
+function renderSummary(){
+  const done = Object.keys(reviews).length;
+  const good = Object.values(reviews).filter(r=>r.verdict==="good").length;
+  const rate = done ? Math.round(good/done*100) : 0;
+  $("#summary").innerHTML = `검수 완료 <b>${done}</b> / ${SAMPLES.length}건 · 적절율 <b>${rate}%</b> (적절 ${good} · 부적절 ${done-good})`;
+}
+
+function next(){ const n=filtered().length; if(n){ idx=(idx+1)%n; render(); } }
+function prev(){ const n=filtered().length; if(n){ idx=(idx-1+n)%n; render(); } }
+
+function esc(t){ return String(t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+$("#next").onclick = next;
+$("#prev").onclick = prev;
+$("#filter").onchange = e=>{ filter=e.target.value; idx=0; render(); };
+
+$("#export").onclick = ()=>{
+  const rows = SAMPLES.map(s=>({...s, ...(reviews[s.id]||{})}));
+  const blob = new Blob([JSON.stringify(rows,null,2)], {type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="mab_review_results.json"; a.click();
+};
+
+$("#reset").onclick = ()=>{ if(confirm("저장된 모든 리뷰를 지울까요?")){ reviews={}; localStorage.removeItem(KEY_REV); render(); } };
+
+$("#upload").onchange = e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const data=JSON.parse(r.result);
+      if(Array.isArray(data) && data.length){ SAMPLES=data; idx=0; render(); alert(`${data.length}개 샘플을 불러왔습니다.`);} }
+    catch(err){ alert("JSON 파싱 실패: "+err.message);} };
+  r.readAsText(f);
+};
+
+// 시작 시: samples.json이 있으면 자동 로드(없으면 기본 샘플 사용)
+fetch("samples.json").then(r=> r.ok ? r.json() : null).then(data=>{
+  if(Array.isArray(data) && data.length){ SAMPLES=data; }
+}).catch(()=>{}).finally(render);
+</script>
+</body>
+</html>
