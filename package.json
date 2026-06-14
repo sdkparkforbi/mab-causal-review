@@ -2,6 +2,7 @@
   "name": "mab-causal-review",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "mAb causal-graph interpretation review — static UI + Vercel serverless API writing to MySQL",
   "dependencies": {
     "mysql2": "^3.11.4"
