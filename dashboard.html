@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>mAb 검증 대시보드 — Review Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+:root{
+  --ink:#20303a; --soft:#51626d; --paper:#fbf7ef; --card:#fffdf8; --line:#e8e0d2;
+  --brand:#2f7d8c; --brand-d:#1f5b67; --accent:#e9913f; --pos:#2e9e6b; --neg:#d65a4e;
+  --sans:"Pretendard",-apple-system,"Segoe UI","Apple SD Gothic Neo",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);color:var(--ink);line-height:1.65;
+  background:radial-gradient(1000px 500px at 85% -10%,#fff6e6 0,transparent 60%),var(--paper)}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 20px 80px}
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:23px;margin:0}
+.sub{color:var(--soft);font-size:14px}
+.row{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0}
+.stat{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;box-shadow:0 8px 24px rgba(40,50,60,.06)}
+.stat .k{font-size:12px;color:var(--soft);letter-spacing:.04em}
+.stat .v{font-size:30px;font-weight:800;color:var(--brand-d);line-height:1.2}
+.stat .v.good{color:var(--pos)} .stat .v.bad{color:var(--neg)}
+.barwrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:6px 0 16px}
+.bar{height:22px;border-radius:6px;overflow:hidden;display:flex;background:#eee}
+.bar .g{background:var(--pos)} .bar .b{background:var(--neg)}
+.bar span{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+.toolbar input,.toolbar select{font-family:var(--sans);font-size:14px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.btn{font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px}
+.btn.primary{background:var(--brand);color:#fff;border:none}
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:14px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#f1ebdd;font-weight:700;position:sticky;top:0}
+tr:last-child td{border-bottom:none}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff}
+.tag.good{background:var(--pos)} .tag.bad{background:var(--neg)}
+.msg{padding:18px;color:var(--soft)}
+.err{background:#fdeeec;border:1px solid #f4cdc6;border-radius:10px;padding:12px 14px;color:var(--neg);margin:10px 0;font-size:14px}
+a{color:var(--brand-d)}
+.foot{text-align:center;color:var(--soft);font-size:12px;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📊 mAb 검증 대시보드</h1>
+    <span class="sub">DB에 저장된 리뷰 결과 (mab_causal_review_results)</span>
+  </header>
+
+  <div id="error"></div>
+
+  <div class="row">
+    <div class="stat"><div class="k">총 리뷰</div><div class="v" id="s-total">–</div></div>
+    <div class="stat"><div class="k">적절율</div><div class="v" id="s-rate">–</div></div>
+    <div class="stat"><div class="k">적절</div><div class="v good" id="s-good">–</div></div>
+    <div class="stat"><div class="k">부적절</div><div class="v bad" id="s-bad">–</div></div>
+    <div class="stat"><div class="k">리뷰어 수</div><div class="v" id="s-rev">–</div></div>
+  </div>
+
+  <div class="barwrap">
+    <div class="bar" id="bar"><span class="g" style="width:0%"></span><span class="b" style="width:0%"></span></div>
+  </div>
+
+  <div class="toolbar">
+    <input id="q" placeholder="검색 (리뷰어·원인·결과)" />
+    <select id="fv"><option value="all">전체 판정</option><option value="적절">적절</option><option value="부적절">부적절</option></select>
+    <button class="btn primary" id="refresh">↻ 새로고침</button>
+    <button class="btn" id="csv">CSV 내보내기</button>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>시각</th><th>리뷰어</th><th>판정</th><th>인과관계</th><th>의견</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="5" class="msg">불러오는 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <p class="foot"><a href="index.html">← 검증 앱으로</a> · mab-causal-review 대시보드</p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let ALL = [];
+
+function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function render(){
+  const q = $("#q").value.trim().toLowerCase();
+  const fv = $("#fv").value;
+  const rows = ALL.filter(r=>{
+    if(fv!=="all" && r.verdict!==fv) return false;
+    if(!q) return true;
+    return [r.reviewer,r.cause,r.effect,r.feedback].join(" ").toLowerCase().includes(q);
+  });
+  const tb = $("#tbody");
+  if(!rows.length){ tb.innerHTML = '<tr><td colspan="5" class="msg">결과가 없습니다.</td></tr>'; return; }
+  tb.innerHTML = rows.map(r=>`
+    <tr>
+      <td>${esc((r.created_at||'').toString().replace('T',' ').slice(0,16))}</td>
+      <td>${esc(r.reviewer)}</td>
+      <td><span class="tag ${r.verdict==='적절'?'good':'bad'}">${esc(r.verdict)}</span></td>
+      <td>${esc(r.cause)} → <b>${esc(r.relationship)}</b> → ${esc(r.effect)}</td>
+      <td>${esc(r.feedback)}</td>
+    </tr>`).join("");
+}
+
+function stats(){
+  const n = ALL.length;
+  const good = ALL.filter(r=>r.verdict==='적절').length;
+  const bad = n - good;
+  const rate = n ? Math.round(good/n*100) : 0;
+  const revs = new Set(ALL.map(r=>r.reviewer)).size;
+  $("#s-total").textContent = n;
+  $("#s-rate").textContent = rate + "%";
+  $("#s-good").textContent = good;
+  $("#s-bad").textContent = bad;
+  $("#s-rev").textContent = revs;
+  const bar = $("#bar");
+  bar.innerHTML = `<span class="g" style="width:${rate}%">${rate?rate+'%':''}</span><span class="b" style="width:${100-rate}%">${(100-rate)&&n?(100-rate)+'%':''}</span>`;
+}
+
+async function load(){
+  $("#error").innerHTML = "";
+  $("#tbody").innerHTML = '<tr><td colspan="5" class="msg">불러오는 중…</td></tr>';
+  try {
+    const r = await fetch("/api/results");
+    const data = await r.json();
+    if(data.error){ $("#error").innerHTML = `<div class="err">DB 오류: ${esc(data.error)} — Vercel 환경변수(DB_HOST 등)를 확인하세요.</div>`; }
+    ALL = data.rows || [];
+    stats(); render();
+  } catch(e){
+    $("#error").innerHTML = `<div class="err">API 호출 실패: ${esc(e.message)} — 로컬 더블클릭이 아니라 배포된 URL에서 열어야 합니다.</div>`;
+    $("#tbody").innerHTML = '<tr><td colspan="5" class="msg">—</td></tr>';
+  }
+}
+
+$("#refresh").onclick = load;
+$("#q").oninput = render;
+$("#fv").onchange = render;
+$("#csv").onclick = ()=>{
+  const head = ["created_at","reviewer","verdict","cause","relationship","effect","feedback"];
+  const lines = [head.join(",")].concat(ALL.map(r=>head.map(k=>`"${String(r[k]==null?'':r[k]).replace(/"/g,'""')}"`).join(",")));
+  const blob = new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="mab_reviews.csv"; a.click();
+};
+
+load();
+</script>
+</body>
+</html>
